@@ -4,7 +4,7 @@
 #	--------------------------------------------------------------------------------------------
 #	かんりぶれ★ ( https://boumou.li/ )
 #
-#	Last up date 2024.12.15 ( エラー表示方法を変更 )
+#	Last up date 2024.12.16 ( 複数ソースの速報取得時の不具合修正 )
 #============================================================================================================
 package ZPL_delayflash;
 
@@ -43,11 +43,6 @@ sub getConfig
 			'valuetype'		=> 1,
 			'description'	=> '前回のスレ立てから一定時間新スレを立てない(秒)',
 		},
-		'tt'	=> {
-			'default'		=> 'スレッドタイトル',
-			'valuetype'		=> 2,
-			'description'	=> '直近の間引きスレタイ',
-		},
 		'_samba'	=> {
 			'default'		=> 0,
 			'valuetype'		=> 1,
@@ -75,22 +70,54 @@ sub execute
 
 	if ($Sys->Equal('MODE', 1)) {
 		my $delay = $this->GetConf('delay');
-		my $tt = $this->GetConf('tt');
 		my $samba = $this->GetConf('_samba');
 		my $nowtime = time;
+		my $tt = $Form->Get('subject');
+		my $infoDir = $Sys->Get('INFO');
+		my $deny_tt = ".$infoDir/deny_tt.txt";
 
-		# 前回のスレ立てからの経過時間とスレタイを判定
-		if ($nowtime - $samba > $delay && $tt ne $Form->Get('subject')) {
+		if (check_tt($tt, $deny_tt)) {
+			PrintBBSError($Sys, 500);
+		
+		# 前回のスレ立てからの経過時間を判定
+		} elsif ($nowtime - $samba > $delay) {
+			# 間引きリストリセット
+			open my $fh, '>', $deny_tt;
+			close $fh;
 			# スレ立て時間記録
 			$this->SetConf('_samba', $nowtime);
+			
 		} else {
-			# 間引きスレタイ記録
-			$tt = $Form->Get('subject');
-			$this->SetConf('tt', $tt);
+			# 間引きリストに追記
+			open my $fh, '>>', $deny_tt;
+			print $fh "$tt\n";
+			close $fh;
 			PrintBBSError($Sys, 500);
 		}
 	}
 	return 0;
+}
+
+#------------------------------------------------------------------------------------------------------------
+#	間引きスレタイと照合
+#------------------------------------------------------------------------------------------------------------
+sub check_tt {
+    my ($tt, $deny_tt) = @_;
+
+    # 間引きスレタイリストを読み込む
+    open my $fh, '<', $deny_tt;
+
+    # ファイルの各行をチェック
+    while (my $line = <$fh>) {
+        chomp $line;
+        if ($line eq $tt) {
+            close $fh;
+            return 1; 
+        }
+    }
+
+    close $fh; 
+    return 0;
 }
 
 #------------------------------------------------------------------------------------------------------------
